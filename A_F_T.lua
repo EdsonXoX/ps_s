@@ -1,14 +1,12 @@
 -- Settings
 DELETE_UI_UPDATER = true
-AUTO_REJOIN = true
+AUTO_REJOIN = false
 REJOIN_INTERVAL = 1800
 
--- Monedas a minar
 mineCoins = {"Christmas3 Small Cane", "Christmas3 Cane"}
 
--- Optimización (ajustar según necesidad)
-COOLDOWN = 0.1      -- Tiempo entre ataques (menor = más rápido)
-LOOP_WAIT = 0.05    -- Velocidad del loop (menor = más rápido)
+COOLDOWN = 0.1      -- (0.13 = standard)
+LOOP_WAIT = 0.05    -- (0.1 = standard)
 
 -- // Don't change anything below
 
