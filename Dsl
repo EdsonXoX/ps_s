@@ -1,0 +1,346 @@
+-- Settings
+local DELETE_UI_UPDATER = false
+local AUTO_REJOIN = false
+local REJOIN_INTERVAL = 1800
+local COOLDOWN = 0.1
+local LOOP_WAIT = 0.05
+local mineCoins = {"Christmas3 Small Cane", "Christmas3 Cane"}
+
+-- Don't change anything below
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local success, dirModule = pcall(function()
+	return require(game.ReplicatedStorage['1 | Directory'])
+end)
+local PetDir = success and dirModule.Pets or {}
+
+local selected_Pets = {}
+local mode = 0 -- 0 = All Pets, 1 = Selected Pets
+local attackMode = 0 -- 0 = Same Coin, 1 = Split Coins
+local FARMING = false
+local equippedPets = {}
+local lastMineCooldown = os.clock()
+local currentCoin = nil
+
+if DELETE_UI_UPDATER then
+	pcall(function()
+		LocalPlayer.PlayerGui.Events:ClearAllChildren()
+	end)
+end
+
+local function getPetLevel(petData, hatsData)
+	local lvl = petData.l
+	if petData.h then
+		for _, hat in pairs(hatsData) do
+			if hat.id == petData.h then
+				lvl = lvl + hat.l
+				break
+			end
+		end
+	end
+	return lvl
+end
+
+local function getPetsToFarm()
+	local Stats = workspace.__REMOTES.Core["Get Stats"]:InvokeServer()
+	local petsToUse = {}
+	
+	for i, pet in pairs(Stats.Save.Pets) do
+		if mode == 0 or (mode == 1 and selected_Pets[pet.id]) then
+			table.insert(petsToUse, {
+				id = pet.id,
+				lvl = getPetLevel(pet, Stats.Save.Hats)
+			})
+		end
+	end
+	return petsToUse
+end
+
+local function startFarming()
+	if FARMING then return end
+	FARMING = true
+	equippedPets = getPetsToFarm()
+
+	task.spawn(function()
+		while FARMING do
+			if math.random(100) == 1 or #equippedPets == 0 then
+				equippedPets = getPetsToFarm()
+			end
+
+			local now = os.clock()
+
+			if attackMode == 0 then
+				if not currentCoin or not currentCoin.Parent or currentCoin.Parent ~= workspace.__THINGS.Coins then
+					currentCoin = nil
+					for i, v in pairs(workspace.__THINGS.Coins:GetChildren()) do
+						local cn = v:FindFirstChild('CoinName')
+						if cn and table.find(mineCoins, cn.Value) then
+							currentCoin = v
+							break
+						end
+					end
+					if not currentCoin then task.wait(0.5) end
+				end
+
+				if currentCoin and currentCoin.Parent == workspace.__THINGS.Coins then
+					local cn = currentCoin:FindFirstChild('CoinName')
+					if cn and table.find(mineCoins, cn.Value) and now > lastMineCooldown + COOLDOWN then
+						for _, pet in pairs(equippedPets) do
+							workspace.__REMOTES.Game.Coins:FireServer("Mine", currentCoin.Name, pet.lvl * 2 - 1, pet.id)
+						end
+						lastMineCooldown = now
+					end
+				end
+
+			else
+				local availableCoins = {}
+				for _, v in pairs(workspace.__THINGS.Coins:GetChildren()) do
+					local cn = v:FindFirstChild('CoinName')
+					if cn and table.find(mineCoins, cn.Value) then
+						table.insert(availableCoins, v)
+					end
+				end
+
+				if #availableCoins > 0 and now > lastMineCooldown + COOLDOWN then
+					local coinIndex = 1
+					for _, pet in pairs(equippedPets) do
+						local assignedCoin = availableCoins[coinIndex]
+						if assignedCoin then
+							workspace.__REMOTES.Game.Coins:FireServer("Mine", assignedCoin.Name, pet.lvl * 2 - 1, pet.id)
+							
+							coinIndex = coinIndex + 1
+							if coinIndex > #availableCoins then
+								coinIndex = 1
+							end
+						end
+					end
+					lastMineCooldown = now
+				end
+			end
+
+			task.wait(LOOP_WAIT)
+		end
+	end)
+end
+
+local function stopFarming()
+	FARMING = false
+end
+
+if AUTO_REJOIN then
+	local ts = game:GetService("TeleportService")
+	task.spawn(function()
+		while true do
+			task.wait(REJOIN_INTERVAL)
+			if FARMING and LocalPlayer and LocalPlayer.Parent then
+				if #Players:GetPlayers() <= 1 then
+					LocalPlayer:Kick("\nRejoining...")
+					task.wait(1)
+					ts:Teleport(game.PlaceId, LocalPlayer)
+				else
+					pcall(function() ts:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer) end)
+				end
+			end
+		end
+	end)
+end
+
+-- (GUI)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutoFarmSelector"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 9999
+ScreenGui.Parent = game.CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 350, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(100, 100, 100)
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.BackgroundTransparency = 1
+Title.Text = "Auto Farm Selector"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.Parent = MainFrame
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 150, 0, 30)
+ToggleBtn.Position = UDim2.new(0.5, -75, 0, 35)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 167, 69)
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 15
+ToggleBtn.Text = "▶ Start Farming"
+ToggleBtn.Parent = MainFrame
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
+
+local AllBtn = Instance.new("TextButton")
+AllBtn.Size = UDim2.new(0, 150, 0, 25)
+AllBtn.Position = UDim2.new(0, 20, 0, 75)
+AllBtn.BackgroundColor3 = Color3.fromRGB(0, 123, 255)
+AllBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+AllBtn.Font = Enum.Font.GothamBold
+AllBtn.TextSize = 13
+AllBtn.Text = "All Pets"
+AllBtn.Parent = MainFrame
+Instance.new("UICorner", AllBtn).CornerRadius = UDim.new(0, 4)
+
+local SelBtn = Instance.new("TextButton")
+SelBtn.Size = UDim2.new(0, 150, 0, 25)
+SelBtn.Position = UDim2.new(0, 180, 0, 75)
+SelBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+SelBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SelBtn.Font = Enum.Font.GothamBold
+SelBtn.TextSize = 13
+SelBtn.Text = "Selected Pets"
+SelBtn.Parent = MainFrame
+Instance.new("UICorner", SelBtn).CornerRadius = UDim.new(0, 4)
+
+local SameCoinBtn = Instance.new("TextButton")
+SameCoinBtn.Size = UDim2.new(0, 150, 0, 25)
+SameCoinBtn.Position = UDim2.new(0, 20, 0, 108)
+SameCoinBtn.BackgroundColor3 = Color3.fromRGB(0, 123, 255)
+SameCoinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SameCoinBtn.Font = Enum.Font.GothamBold
+SameCoinBtn.TextSize = 13
+SameCoinBtn.Text = "Same Coin"
+SameCoinBtn.Parent = MainFrame
+Instance.new("UICorner", SameCoinBtn).CornerRadius = UDim.new(0, 4)
+
+local SplitCoinBtn = Instance.new("TextButton")
+SplitCoinBtn.Size = UDim2.new(0, 150, 0, 25)
+SplitCoinBtn.Position = UDim2.new(0, 180, 0, 108)
+SplitCoinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+SplitCoinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+SplitCoinBtn.Font = Enum.Font.GothamBold
+SplitCoinBtn.TextSize = 13
+SplitCoinBtn.Text = "Split Coins"
+SplitCoinBtn.Parent = MainFrame
+Instance.new("UICorner", SplitCoinBtn).CornerRadius = UDim.new(0, 4)
+
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Size = UDim2.new(1, -40, 0, 142)
+ScrollingFrame.Position = UDim2.new(0, 20, 0, 145)
+ScrollingFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+ScrollingFrame.BorderSizePixel = 0
+ScrollingFrame.ScrollBarThickness = 6
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.Parent = MainFrame
+Instance.new("UICorner", ScrollingFrame).CornerRadius = UDim.new(0, 4)
+
+local UIListLayout = Instance.new("UIListLayout", ScrollingFrame)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 4)
+
+local RefreshBtn = Instance.new("TextButton")
+RefreshBtn.Size = UDim2.new(0, 100, 0, 25)
+RefreshBtn.Position = UDim2.new(0.5, -50, 1, -33)
+RefreshBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+RefreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+RefreshBtn.Font = Enum.Font.GothamBold
+RefreshBtn.TextSize = 13
+RefreshBtn.Text = "Refresh"
+RefreshBtn.Parent = MainFrame
+Instance.new("UICorner", RefreshBtn).CornerRadius = UDim.new(0, 4)
+
+local function LoadPets()
+	for _, v in pairs(ScrollingFrame:GetChildren()) do
+		if v:IsA("TextButton") then v:Destroy() end
+	end
+	
+	local Stats = workspace.__REMOTES.Core["Get Stats"]:InvokeServer()
+	local Pets = Stats.Save.Pets
+	table.sort(Pets, function(a, b) return tonumber(a.xp) > tonumber(b.xp) end)
+	
+	local function formatNumber(number)
+		if not number then return 'nil' end
+		local formatted = tostring(number)
+		while true do
+			formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+			if k == 0 then break end
+		end
+		return formatted
+	end
+
+	for _, v in pairs(Pets) do
+		local b = Instance.new('TextButton', ScrollingFrame)
+		local prefix = v.dm and v.r and 'Glitched' or v.dm and 'Dark Matter' or v.r and 'Rainbow' or v.g and 'Gold' or 'Regular'
+		
+		local petData = PetDir[tostring(v.n)]
+		local petName = petData and petData.DisplayName or tostring(v.n)
+		
+		b.Text = ' ' .. formatNumber(v.l) .. ' | ' .. prefix .. ' ' .. petName
+		b.Font = Enum.Font.GothamBold
+		b.TextSize = 12
+		b.BackgroundColor3 = selected_Pets[v.id] and Color3.fromRGB(0, 123, 255) or Color3.fromRGB(45, 45, 45)
+		b.TextXAlignment = Enum.TextXAlignment.Left
+		b.TextColor3 = Color3.fromRGB(218, 218, 218)
+		b.Name = v.id
+		b.Size = UDim2.new(1, -10, 0, 30)
+		b.AutoButtonColor = false
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+
+		b.MouseButton1Click:Connect(function()
+			if selected_Pets[v.id] then
+				selected_Pets[v.id] = nil
+				b.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+			else
+				selected_Pets[v.id] = true
+				b.BackgroundColor3 = Color3.fromRGB(0, 123, 255)
+			end
+		end)
+	end
+	
+	ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 10)
+end
+
+RefreshBtn.MouseButton1Click:Connect(LoadPets)
+
+AllBtn.MouseButton1Click:Connect(function()
+	mode = 0
+	AllBtn.BackgroundColor3 = Color3.fromRGB(0, 123, 255)
+	SelBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+end)
+
+SelBtn.MouseButton1Click:Connect(function()
+	mode = 1
+	SelBtn.BackgroundColor3 = Color3.fromRGB(0, 123, 255)
+	AllBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+end)
+
+SameCoinBtn.MouseButton1Click:Connect(function()
+	attackMode = 0
+	SameCoinBtn.BackgroundColor3 = Color3.fromRGB(0, 123, 255)
+	SplitCoinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+end)
+
+SplitCoinBtn.MouseButton1Click:Connect(function()
+	attackMode = 1
+	SplitCoinBtn.BackgroundColor3 = Color3.fromRGB(0, 123, 255)
+	SameCoinBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+	if FARMING then
+		stopFarming()
+		ToggleBtn.Text = "▶ Start Farming"
+		ToggleBtn.BackgroundColor3 = Color3.fromRGB(40, 167, 69)
+	else
+		startFarming()
+		ToggleBtn.Text = "⏹ Stop Farming"
+		ToggleBtn.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+	end
+end)
+
+LoadPets()
